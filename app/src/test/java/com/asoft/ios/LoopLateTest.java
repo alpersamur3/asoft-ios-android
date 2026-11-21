@@ -32,9 +32,9 @@ public class LoopLateTest {
 
     @Test
     public void theHostLineReadsLikeAPerson() {
-        assertEquals("loop late max 2 s, screen off, idle no, power-save no, battery whitelist yes, charging yes, thermal 2",
+        assertEquals("loop late max 2 s, screen off, idle no, power-save no, battery whitelist yes, charging yes, thermal 2 (moderate)",
                 SetupTick.hostText(1_800, 0, 0, 0, 1, 1, 2));
-        assertEquals("loop late max 0 s, screen on, idle yes, power-save yes, battery whitelist no, charging no, thermal 0",
+        assertEquals("loop late max 0 s, screen on, idle yes, power-save yes, battery whitelist no, charging no, thermal 0 (none)",
                 SetupTick.hostText(-5, 1, 1, 1, 0, 0, 0));
         assertEquals("loop late max 691 s, screen ?, idle ?, power-save ?, battery whitelist ?, charging no, thermal ?",
                 SetupTick.hostText(691_000, -1, -1, -1, -1, 0, -1));

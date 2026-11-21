@@ -33,9 +33,18 @@ public class SetupTickTest {
     }
 
     private static String amfi(int pid) {
-        return "AMFI: Launch Constraint Violation (not enforcing), error info: c[6]p[2]m[3]e[255], (Process was launched as a system"
-                + " service unexpectedly) launching proc[vc: 1 pid: " + pid + "]: /bin/bash, launch type 1, failure proc [vc: 1 pid: 1]\n";
+        return amfi(pid, "/bin/bash");
     }
+
+    private static String amfi(int pid, String exe) {
+        return "AMFI: Launch Constraint Violation (not enforcing), error info: c[6]p[2]m[3]e[255], (Process was launched as a system"
+                + " service unexpectedly) launching proc[vc: 1 pid: " + pid + "]: " + exe + ", launch type 1, failure proc [vc: 1 pid: 1]\n";
+    }
+
+    private static final String ENGINE = "native-el0: stub 18 did not apply a TLB invalidation in 5 s\n"
+            + "native-el0: vCPU 2 waits 10 s on stub 18 (pid 4242 tid 4243): cmd=1 status=3 kick=0 last sig=7 code=1 addr=0x0"
+            + " pc=0x1 fill va=0x2 len=0x3 enters=4\n"
+            + "native-el0: stub 18 died while running vCPU 2; slots: [v0 phase=1 status=3 cmd=1 sig=7 pc=0x1 sp=0x2 fill=0x3+0x4]\n";
 
     private void append(File f, String s) throws IOException {
         Files.write(f.toPath(), s.getBytes(StandardCharsets.ISO_8859_1), java.nio.file.StandardOpenOption.CREATE,
@@ -53,6 +62,37 @@ public class SetupTickTest {
         assertEquals(1, c.displayStarts);
         assertEquals(1, c.gpuRestarts);
         assertEquals(t.indexOf("pid: 65342"), c.jumpAt);
+    }
+
+    @Test
+    public void theScanNamesWhatIsLaunchedOverAndOver() {
+        String t = amfi(65342) + amfi(65343, "/usr/libexec/mobileassetd") + amfi(65344)
+                + amfi(65345, "/usr/libexec/mobileassetd") + amfi(65346, "/usr/libexec/mobileassetd");
+        SetupTick.Console c = SetupTick.scanConsole(t, 0);
+        assertEquals(5, c.launches);
+        assertEquals(2, c.bash);
+        assertEquals("/usr/libexec/mobileassetd", c.topLaunch);
+        assertEquals(3, c.topLaunchCount);
+    }
+
+    @Test
+    public void theTickReportsLaunchesAndTheEnginesOwnStalls() throws IOException {
+        File serial = new File(dir, "serial.txt"), err = new File(dir, "qemu-stderr.txt");
+        append(serial, amfi(46, "/usr/libexec/mobileassetd") + amfi(47, "/usr/libexec/mobileassetd"));
+        append(err, ENGINE);
+        SetupTick t = new SetupTick(serial, err, new File(dir, "logs"), "wallpaper", 0);
+        String line = t.tick(5, "5 min", 0, 0, 300);
+        assertTrue(line, line.contains("launch procs 2 (top /usr/libexec/mobileassetd x2)"));
+        assertTrue(line, line.contains("engine tlb-timeouts 1, stub-waits 1, stub-deaths 1"));
+        assertEquals("engine tlb-timeouts 1, stub-waits 1, stub-deaths 1", SetupTick.engineText(err));
+    }
+
+    @Test
+    public void theThermalStatusHasWords() {
+        assertEquals("none", SetupTick.thermalName(0));
+        assertEquals("moderate", SetupTick.thermalName(2));
+        assertEquals("severe", SetupTick.thermalName(3));
+        assertEquals("?", SetupTick.thermalName(9));
     }
 
     @Test

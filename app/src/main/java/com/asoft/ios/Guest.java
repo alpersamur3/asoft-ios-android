@@ -2145,8 +2145,23 @@ final class Guest {
         Render.closeGuestRam();     // iOS 16's, if it ran before: QEMU makes iOS 26's own
         File icd = writeVulkanIcd(c, links);
         List<String> extra = new ArrayList<>();
-        // ios26.txt (debug builds) is iOS 26's: the watch takes none of it
-        Map<String, String> ov = watch || sb != null ? new java.util.HashMap<>() : overrides26(c, extra);
+        // ios26.txt (debug builds) is iOS 26's: the watch takes none of it. A setup boot keeps its own CPU,
+        // tree, disk and boot-args (its DataMigration is what the engine switches are tested on): only env.*
+        // lines are taken from it, never arg= or cpu/dtree/cache/bootargs.
+        List<String> setupArgs = new ArrayList<>();
+        Map<String, String> ov = watch ? new java.util.HashMap<>() : overrides26(c, sb != null ? setupArgs : extra);
+        if (sb != null) {
+            Map<String, String> envOnly = new java.util.HashMap<>();
+            for (Map.Entry<String, String> e : ov.entrySet()) {
+                if (e.getKey().startsWith("env.")) {
+                    envOnly.put(e.getKey(), e.getValue());
+                }
+            }
+            ov = envOnly;
+            if (!ov.isEmpty()) {
+                AppLog.note(c, "ios26.txt (setup boot): " + ov);
+            }
+        }
         lastOverrides26 = ov;
         if (!ov.isEmpty() || !extra.isEmpty()) {
             AppLog.note(c, "ios26.txt: " + ov + " " + extra);
@@ -2237,6 +2252,9 @@ final class Guest {
         } else {
             cmd.add("-device");
             cmd.add("usb-consumer,bus=xhci.0,port=3,id=ucons");
+            // No -nic: vresearch makes virtio-net-pci on slirp from QEMU's default NIC when none is given, the
+            // same card at the same PCI slot (vresearch.c), on setup boots as well; an explicit -nic changes
+            // nothing there. WatchProfile.addNetwork is for the watch's own machine.
         }
         cmd.add("-no-reboot");
         if ((c.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {

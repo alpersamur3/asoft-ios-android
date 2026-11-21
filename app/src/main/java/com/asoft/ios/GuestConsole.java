@@ -79,7 +79,7 @@ final class GuestConsole implements AutoCloseable {
         }
     }
 
-    /** The command's output, or null when it got none within @waitMs (sent again every @retryMs). */
+    /** The command's output, or null when it got none within @waitMs (sent again every @retryMs until taken). */
     String run(String cmd, long waitMs, long retryMs) {
         return run(cmd, waitMs, retryMs, false);
     }
@@ -87,39 +87,49 @@ final class GuestConsole implements AutoCloseable {
     /**
      * As run(); with @reset every send (the first too) goes after a reset: a retry typed onto a half line of the
      * last one (or behind a command still running) never started, and nothing else cleared bash's input.
+     * <p>
+     * Once the start marker has come back, the shell has taken the line and its command runs: a copy is not sent
+     * again. On a busy guest (DataMigration) that copy queued behind the first one, so the console's input grew
+     * a copy of every poll and a later one could answer an earlier tag (2026-11-17, the K18 log's piles).
      */
     String run(String cmd, long waitMs, long retryMs, boolean reset) {
         lastPoll = SetupTick.Poll.NOT_SENT;
         long until = System.currentTimeMillis() + waitMs;
+        String start = null, end = null;
+        boolean sent = false;
         while (System.currentTimeMillis() < until) {
             if (!connect()) {
                 sleep(1000);
                 continue;
             }
-            n++;
-            String tag = "G" + (System.currentTimeMillis() % 1_000_000_000L) + n + "G";
-            String start = "@@" + tag + "S@@", end = "@@" + tag + "E@@";
             try {
-                OutputStream o;
-                synchronized (this) {
-                    o = out;
-                }
-                if (o == null) {
-                    continue;
-                }
-                if (reset) {
-                    // Ctrl-C ends what runs and gives a new prompt, Ctrl-U drops what is typed, then a fresh line
-                    o.write(new byte[] {3, 21, '\r'});
+                if (!sent) {
+                    n++;
+                    String tag = "G" + (System.currentTimeMillis() % 1_000_000_000L) + n + "G";
+                    start = "@@" + tag + "S@@";
+                    end = "@@" + tag + "E@@";
+                    OutputStream o;
+                    synchronized (this) {
+                        o = out;
+                    }
+                    if (o == null) {
+                        continue;
+                    }
+                    if (reset) {
+                        // Ctrl-C ends what runs and gives a new prompt, Ctrl-U drops what is typed, then a fresh line
+                        o.write(new byte[] {3, 21, '\r'});
+                        o.flush();
+                        sleep(300);
+                    }
+                    o.write(("echo @@" + tag + "\"S\"@@; " + cmd + "; echo @@" + tag + "\"E\"@@\r").getBytes(StandardCharsets.UTF_8));
                     o.flush();
-                    sleep(300);
+                    advance(SetupTick.Poll.SENT);
+                    sent = true;
                 }
-                o.write(("echo @@" + tag + "\"S\"@@; " + cmd + "; echo @@" + tag + "\"E\"@@\r").getBytes(StandardCharsets.UTF_8));
-                o.flush();
-                advance(SetupTick.Poll.SENT);
                 long again = Math.min(until, System.currentTimeMillis() + retryMs);
                 while (System.currentTimeMillis() < again) {
                     synchronized (buf) {
-                        int i = buf.indexOf(start);
+                        int i = start == null ? -1 : buf.indexOf(start);
                         int j = i >= 0 ? buf.indexOf(end, i + 1) : -1;
                         if (i >= 0) {
                             // (the unquoted marker is bash's own output: the echoed command line has it quoted)
@@ -136,7 +146,11 @@ final class GuestConsole implements AutoCloseable {
                 }
             } catch (IOException e) {
                 close();
+                sent = false;
                 sleep(1000);
+            }
+            if (lastPoll != SetupTick.Poll.STARTED) {
+                sent = false;       // the shell never took the line: send it again with a new tag
             }
         }
         return null;

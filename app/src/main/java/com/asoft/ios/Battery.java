@@ -3,7 +3,9 @@ package com.asoft.ios;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.PowerManager;
 import android.provider.Settings;
 
@@ -22,6 +24,21 @@ final class Battery {
     static boolean exempt(Context c) {
         PowerManager pm = c.getSystemService(PowerManager.class);
         return pm == null || pm.isIgnoringBatteryOptimizations(c.getPackageName());
+    }
+
+    /**
+     * The battery's temperature in °C from the sticky battery broadcast, NaN when Android does not say.
+     * PowerManager's thermal status alone reads high while the phone feels cool (a 2, moderate, is common):
+     * this number says whether the phone is really warm.
+     */
+    static float temperatureC(Context c) {
+        try {
+            Intent b = c.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            int t = b == null ? Integer.MIN_VALUE : b.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Integer.MIN_VALUE);
+            return t == Integer.MIN_VALUE ? Float.NaN : t / 10f;
+        } catch (RuntimeException e) {
+            return Float.NaN;
+        }
     }
 
     /**

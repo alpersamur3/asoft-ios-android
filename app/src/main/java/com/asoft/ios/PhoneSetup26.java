@@ -1116,6 +1116,7 @@ final class PhoneSetup26 {
         if (serial.exists() && !serial.delete()) {
             throw new IOException("could not clear " + serial);
         }
+        MemoryCleaner.beforeBoot(c);
         Guest.startSetup(c, b);
     }
 
@@ -1187,6 +1188,14 @@ final class PhoneSetup26 {
         }
     }
 
+    /**
+     * The highest "frame N shown" this boot has shown. Only the newest 256 KB of QEMU's stderr are read: once
+     * the log is longer, the old frame lines are out of that window and a raw re-read answers 0 (2026-11-17: a
+     * tick then said "frames +-67328" and a boot that had stopped drawing looked as if it drew again). The
+     * highest seen this boot never goes back; {@link #iosWallpaper} resets it for a boot.
+     */
+    private static int framesHigh = -1;
+
     private static int framesShown(Context c) {
         int n = 0;
         File log = new File(Guest.runDir(c), "qemu-stderr.txt");
@@ -1203,10 +1212,14 @@ final class PhoneSetup26 {
         } catch (IOException | NumberFormatException ignored) {
             // not yet
         }
-        return n;
+        if (n > framesHigh) {
+            framesHigh = n;
+        }
+        return Math.max(0, framesHigh);
     }
 
     private static void iosWallpaper(Context c, PhoneSetup.Progress p, BooleanSupplier cancelled) throws IOException {
+        framesHigh = -1;        // this boot's frames count from zero (framesShown)
         // 5.3.6: root.qcow2 on the top layer, booted once: DataMigration and then PosterBoard's first run write
         // into it (a disk stopped before DataMigration ends runs it again at every start)
         // debug: files/setup/a26/phone/keep-root boots the last run's root.qcow2 again (what its DataMigration
@@ -1264,7 +1277,11 @@ final class PhoneSetup26 {
                 }
                 mustRun(c, "DataMigration");
                 long min = (System.currentTimeMillis() - t1) / 60_000;
-                p.step("ios26:wallpaper", 15 + (int) Math.min(70, min * 70 / 60), (min <= 75
+                // the wait is estimated by time, and it used to stop at 85 % after 60 min: a boot that went on
+                // (a slow phone, or iOS still working) looked frozen at exactly 85 % in the setup screen. Past
+                // 60 min it now moves a point every 15 min, up to 95.
+                int pct = min <= 60 ? 15 + (int) (min * 70 / 60) : 85 + (int) Math.min(10, (min - 60) / 15);
+                p.step("ios26:wallpaper", pct, (min <= 75
                         ? "DataMigration is setting iOS up (" + min + " min; on a PC about " + SystemAppMigrator.pcMinutes(sam) + "). The phone may get warm."
                         : "DataMigration is taking longer than usual (" + min + " min; a phone needs about 60 to 75)."
                                 + " It can take a few hours on a slow phone; leave it running.") + watch.quietStatus(System.currentTimeMillis()));
@@ -1379,7 +1396,8 @@ final class PhoneSetup26 {
         SetupTick.slice(serial, Math.max(0, serial.length() - SetupTick.SLICE), SetupTick.SLICE, new File(logs, "wallpaper-serial-stall-" + n + ".txt"));
         SetupTick.slice(err, Math.max(0, err.length() - SetupTick.SLICE), SetupTick.SLICE, new File(logs, "wallpaper-stderr-stall-" + n + ".txt"));
         AppLog.note(c, "setup26: stall " + n + " (" + kind + ") at minute " + min + ": shell silent " + silent + " min, console pid max "
-                + watch.maxPid() + ", frames " + frames + ", " + state + "; the last 64 KB of console and QEMU's stderr are in phone/logs (wallpaper-*-stall-" + n + ".txt)");
+                + watch.maxPid() + ", frames " + frames + ", " + SetupTick.engineText(err) + ", " + state
+                + "; the last 64 KB of console and QEMU's stderr are in phone/logs (wallpaper-*-stall-" + n + ".txt)");
         return new IOException(StallHistory.userText(MigrationWatch.stallText(v, silent), n));
     }
 
@@ -1626,7 +1644,9 @@ final class PhoneSetup26 {
         } catch (RuntimeException ignored) {
             // a line without them is no harm
         }
-        return SetupTick.hostText(lateMs, on, idle, save, white, charging(c) ? 1 : 0, thermal(c));
+        float batteryC = Battery.temperatureC(c);
+        return SetupTick.hostText(lateMs, on, idle, save, white, charging(c) ? 1 : 0, thermal(c)) + ", " + HostCpus.text()
+                + (Float.isNaN(batteryC) ? "" : String.format(java.util.Locale.ROOT, ", battery %.1f C", batteryC));
     }
 
     static boolean shouldHold(Context c) {

@@ -26,15 +26,16 @@ import java.util.Set;
 
 /**
  * Logs: what the app kept when something went wrong (CrashReport's records, newest first: when, what, the cause
- * in a line), the app's own log and the last GPU check's report. A tap opens one (this screen again, with
+ * in a line), the app's own log, the logs of the system that runs now (RunLogs: the guest's console, QEMU's
+ * stderr, the setup's kept slices) and the last GPU check's report. A tap opens one (this screen again, with
  * EXTRA_ITEM) with its text, scrubbed as it would be sent, and Share, Report on GitHub and, for a record, Delete.
  * Reached from the home screen's Settings and from Set up, which shows its Logs button even on a fresh app.
  * The home screen's style: rounded groups of rows on black.
  */
 public class LogsActivity extends Activity {
-    /** Which log to show: RECORD + its id, APP_LOG or GPU; none: the list. */
+    /** Which log to show: RECORD + its id, APP_LOG, GPU or RUN + a key of RunLogs; none: the list. */
     static final String EXTRA_ITEM = "item";
-    static final String RECORD = "record:", APP_LOG = "applog", GPU = "gpucheck";
+    static final String RECORD = "record:", APP_LOG = "applog", GPU = "gpucheck", RUN = "run:";
 
     private static final int BG = Color.BLACK, LINE = 0xff26262a, TEXT = 0xfff5f5f7, DIM = 0xff8e8e93, FAINT = 0xff636366,
             LINK = 0xff6cb2ff, RED = 0xffff5a50;
@@ -178,20 +179,23 @@ public class LogsActivity extends Activity {
             Set<String> unseen = CrashReport.unseen(this);
             long appLog = new File(Guest.runDir(this), "app.txt").length();
             GpuCheck.Result gpu = GpuCheck.dir(this).isDirectory() ? GpuCheck.last(this) : null;
+            List<RunLogs.Item> running = RunLogs.all(this);
             runOnUiThread(() -> {
                 if (!isDestroyed()) {
-                    list(recs, unseen, appLog, gpu);
+                    list(recs, unseen, appLog, gpu, running);
                 }
             });
         }, "logs-list").start();
     }
 
-    private void list(List<CrashReport.Record> recs, Set<String> unseen, long appLog, GpuCheck.Result gpu) {
+    private void list(List<CrashReport.Record> recs, Set<String> unseen, long appLog, GpuCheck.Result gpu,
+                      List<RunLogs.Item> running) {
         box.removeAllViews();
         title("Logs");
-        TextView sub = text(box, "What the app kept when something went wrong, newest first. Nothing is sent by itself: Share"
-                + " and Report on GitHub show you the text first; paths inside the app are shortened and nothing personal is"
-                + " in it.", 13.5f, DIM);
+        TextView sub = text(box, "What the app kept when something went wrong, newest first, and the logs of the system that"
+                + " runs now: the guest's console and QEMU's own output, readable at any time, not only after a failure."
+                + " Nothing is sent by itself: Share and Report on GitHub show you the text first; paths inside the app are"
+                + " shortened and nothing personal is in it.", 13.5f, DIM);
         sub.setPadding(0, dp(6), 0, dp(4));
         if (recs.isEmpty()) {
             TextView none = text(box, "Nothing went wrong so far: no records.", 15, DIM);
@@ -212,6 +216,15 @@ public class LogsActivity extends Activity {
         row(g, "App log", "What the app decided and why: starts, saves, setups", appLog > 0 ? size(appLog) : "empty", v -> open(APP_LOG));
         if (gpu != null && gpu.ran) {
             row(g, "GPU check", gpu.summary, gpu.pass ? "passed" : "not passed", v -> open(GPU));
+        }
+        if (!running.isEmpty()) {
+            TextView sh = text(box, "The system's logs", 13, DIM);
+            sh.setTypeface(MEDIUM);
+            sh.setPadding(dp(18), dp(28), dp(18), dp(10));
+            LinearLayout sg = group(0);
+            for (RunLogs.Item it : running) {
+                row(sg, it.title, it.meta, RunLogs.size(it.length()), v -> open(RUN + it.key));
+            }
         }
         if (!recs.isEmpty()) {
             LinearLayout actions = new LinearLayout(this);
@@ -240,6 +253,7 @@ public class LogsActivity extends Activity {
         String title = "", meta = "", text = "";
         CrashReport.Record record;
         GpuCheck.Result gpu;
+        RunLogs.Item run;
     }
 
     private void showItem() {
@@ -262,6 +276,16 @@ public class LogsActivity extends Activity {
                 s.title = "App log";
                 s.meta = "Its newest part: what the app decided and why (starts, saves, setups, the helper VM).";
                 s.text = CrashText.scrub(CrashReport.tailText(new File(Guest.runDir(this), "app.txt"), APP_LOG_BYTES), pre);
+            } else if (item.startsWith(RUN)) {
+                s.run = RunLogs.find(this, item.substring(RUN.length()));
+                if (s.run != null) {
+                    long len = s.run.length();
+                    s.title = s.run.title;
+                    s.meta = s.run.meta + "  ·  " + (len > RunLogs.VIEW_BYTES
+                            ? "the last " + RunLogs.size(RunLogs.VIEW_BYTES) + " of " + RunLogs.size(len)
+                            : RunLogs.size(len));
+                    s.text = CrashText.scrub(RunLogs.tail(s.run.file, RunLogs.VIEW_BYTES, s.run.charset), pre);
+                }
             } else if (GPU.equals(item)) {
                 s.gpu = GpuCheck.last(this);
                 s.title = "GPU check";
@@ -305,10 +329,20 @@ public class LogsActivity extends Activity {
                     String all = CrashReport.shareText(this, s.record);
                     runOnUiThread(() -> CrashReport.shareFile(this, s.record.summary(), all));
                 }, "share-log").start();
+            } else if (s.run != null) {
+                // more than the viewer shows, still the end: a live console's whole file can be tens of MB
+                new Thread(() -> {
+                    String all = CrashText.scrub(RunLogs.tail(s.run.file, RunLogs.SHARE_BYTES, s.run.charset),
+                            CrashReport.prefixes(this));
+                    runOnUiThread(() -> CrashReport.shareFile(this, s.run.title, all));
+                }, "share-log").start();
             } else {
                 CrashReport.shareFile(this, s.title, s.text);
             }
         });
+        if (s.run != null) {
+            link(actions, "Refresh", LINK, v -> showItem());     // the file goes on being written
+        }
         link(actions, "Report on GitHub", LINK, v -> report(s));
         if (s.record != null) {
             link(actions, "Delete", RED, v -> new AlertDialog.Builder(this)
@@ -370,8 +404,8 @@ public class LogsActivity extends Activity {
             return;
         }
         List<CrashText.Block> blocks = new ArrayList<>();
-        blocks.add(new CrashText.Block("The app's log, its last lines", lines, 1));
-        CrashReport.openIssue(this, CrashText.logTitle(line), "The app's log, from Logs", line, facts, blocks);
+        blocks.add(new CrashText.Block(s.title, lines, 1));
+        CrashReport.openIssue(this, CrashText.logTitle(line), s.title + ", from Logs", line, facts, blocks);
     }
 
     private void reportGpu(Shown s, LinkedHashMap<String, String> facts, List<String> lines) {

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -52,8 +53,9 @@ final class AppLog {
                 continue;
             }
             try {
-                List<String> lines = Files.readAllLines(from.toPath(), StandardCharsets.ISO_8859_1);
-                List<String> tail = lines.subList(Math.max(0, lines.size() - 400), lines.size());
+                // the end only: a churning console can be tens of MB, and readAllLines would hold all of it
+                List<String> lines = Arrays.asList(RunLogs.tail(from, 512_000, StandardCharsets.ISO_8859_1).split("\n"));
+                List<String> tail = lines.subList(Math.max(0, lines.size() - 2000), lines.size());
                 Files.write(new File(dir(c), "last-" + n).toPath(), tail, StandardCharsets.ISO_8859_1);
             } catch (IOException ignored) {
                 // keep going without it

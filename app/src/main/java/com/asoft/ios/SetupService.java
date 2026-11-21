@@ -51,9 +51,52 @@ public class SetupService extends Service {
     static final State state = new State();
     private static volatile boolean cancel, pause;
     private static volatile Thread worker;
-    private PowerManager.WakeLock wakeLock;
+    private static volatile SetupService instance;
+    private PowerManager.WakeLock wakeLock, screenLock;
     private ConnectivityManager.NetworkCallback netCallback;
     private volatile boolean unmetered = true, online = true;
+
+    /**
+     * Keep the display on while a setup runs (a screen wake lock), even when the setup's screen is not the one
+     * showing: Android moves the app to its slow cores when the screen sleeps. On by default; Settings turns it
+     * off. It does not change the brightness. The setup screen's own FLAG_KEEP_SCREEN_ON stays as the fallback.
+     */
+    static boolean keepScreen(Context c) {
+        return c.getSharedPreferences("setup", MODE_PRIVATE).getBoolean("keep-screen-on", true);
+    }
+
+    static void setKeepScreen(Context c, boolean on) {
+        c.getSharedPreferences("setup", MODE_PRIVATE).edit().putBoolean("keep-screen-on", on).apply();
+        SetupService s = instance;
+        if (s != null) {
+            s.applyScreenLock();
+        }
+    }
+
+    /** Acquires or releases the screen wake lock to match the switch and whether a setup runs. */
+    private synchronized void applyScreenLock() {
+        boolean on = state.running && keepScreen(this);
+        if (on && screenLock == null) {
+            try {
+                screenLock = getSystemService(PowerManager.class)
+                        .newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "asoft:setup-screen");
+                screenLock.setReferenceCounted(false);
+                screenLock.acquire();
+            } catch (RuntimeException e) {
+                AppLog.note(this, "keep screen on during the setup: " + e);
+                screenLock = null;
+            }
+        } else if (!on && screenLock != null) {
+            try {
+                if (screenLock.isHeld()) {
+                    screenLock.release();
+                }
+            } catch (RuntimeException ignored) {
+                // already gone
+            }
+            screenLock = null;
+        }
+    }
 
     static boolean wifiOnly(Context c) {
         return c.getSharedPreferences("setup", MODE_PRIVATE).getBoolean("wifi-only", true);
@@ -156,6 +199,7 @@ public class SetupService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        instance = this;
         String a = intent == null || intent.getAction() == null ? "start" : intent.getAction();
         startForeground(NOTE, note(state.text.isEmpty() ? "Starting" : state.text, state.pct),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
@@ -295,6 +339,7 @@ public class SetupService extends Service {
             wakeLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "asoft:setup");
             wakeLock.acquire();
         }
+        applyScreenLock();
         IpswFetch[] current = new IpswFetch[1];
         boolean a26 = "a26".equals(state.target);
         // a helper VM job is held (SIGSTOP) while paused, too hot or low on battery off the charger, and goes on after
@@ -606,6 +651,11 @@ public class SetupService extends Service {
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
+        if (screenLock != null && screenLock.isHeld()) {
+            screenLock.release();
+        }
+        screenLock = null;
+        instance = null;
         super.onDestroy();
     }
 }

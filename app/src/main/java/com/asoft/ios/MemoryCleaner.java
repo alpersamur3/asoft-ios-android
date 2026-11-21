@@ -162,6 +162,164 @@ final class MemoryCleaner {
         }
     }
 
+    /**
+     * One round before a setup boot (PhoneSetup26.startCool): iOS's DataMigration boots need the room more than
+     * any other step, and it is the step Android's memory killer has ended most often.
+     */
+    static void beforeBoot(Context c) {
+        if (!enabled(c) || !busy.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            round(c, "free memory before the boot", 30_000);
+        } finally {
+            busy.set(false);
+        }
+        // and the 90 s rounds go on while this boot's QEMU runs
+        start(c);
+    }
+
+    /**
+     * One round on the user's request (the memory sheet before a start): am kill-all. Returns {available before,
+     * after} in MB; through the pairing when there is one, else the app's own killBackgroundProcesses (Android 13
+     * and older, cached processes).
+     */
+    static long[] freeNow(Context c, int timeoutMs) throws java.io.IOException {
+        ActivityManager am = c.getSystemService(ActivityManager.class);
+        long before = Helper.available(c) >> 20;
+        if (WirelessAdb.paired(c)) {
+            WirelessAdb.shell(c, "am kill-all", timeoutMs);
+        } else {
+            for (String p : others(c)) {
+                try {
+                    am.killBackgroundProcesses(p);
+                } catch (SecurityException ignored) {
+                    // the platform refuses it on Android 14+: the pairing is the way there
+                }
+            }
+        }
+        sleep(1500);
+        // the same source as the sheet's "Free X of Y" (MemAvailable): ActivityManager's number can differ
+        return new long[] {before, Helper.available(c) >> 20};
+    }
+
+    /** A process line of "dumpsys meminfo": "  1,228,800K: com.foo (pid 12 / activities)". */
+    private static final java.util.regex.Pattern TOP =
+            java.util.regex.Pattern.compile("^\\s*([0-9,]+)K:\\s+(.+?)(?:\\s+\\(pid.*)?$");
+
+    /** The memory sheet's dumpsys: the top processes and the Total/Free/Used/Lost/ZRAM summary. */
+    static final class Info {
+        String top = "", summary = "";
+    }
+
+    /** What the memory sheet shows, from one "dumpsys meminfo"; without the pairing, only why there is none. */
+    static Info info(Context c, int n, int timeoutMs) {
+        Info i = new Info();
+        if (!WirelessAdb.paired(c)) {
+            i.top = "Wireless debugging is not paired: the apps cannot be listed (the kill still ends this app's "
+                    + "background processes on Android 13 and older).";
+            return i;
+        }
+        try {
+            String d = WirelessAdb.shell(c, "dumpsys meminfo", timeoutMs);
+            i.top = topLines(d, n);
+            i.summary = summaryLines(d);
+            return i;
+        } catch (java.io.IOException e) {
+            i.top = "Could not list the apps: " + e.getMessage();
+            return i;
+        }
+    }
+
+    /** "Total RAM: 11,700,000K": the summary line of dumpsys meminfo, in the list's MB (KiB). */
+    private static final java.util.regex.Pattern RAM =
+            java.util.regex.Pattern.compile("^\\s*(Total|Free|Used|Lost) RAM:\\s*([0-9,]+)K", java.util.regex.Pattern.MULTILINE);
+    private static final java.util.regex.Pattern ZRAM =
+            java.util.regex.Pattern.compile("^\\s*ZRAM:\\s*([0-9,]+)K physical used for ([0-9,]+)K",
+                    java.util.regex.Pattern.MULTILINE);
+
+    /** "Used 5371 MB · Free 4785 MB · Lost 1172 MB · ZRAM 1953 MB (swap 3906 MB)", what is not in the top list. */
+    static String summaryLines(String dumpsys) {
+        if (dumpsys == null) {
+            return "";
+        }
+        long total = -1, free = -1, used = -1, lost = -1, zram = -1, swap = -1;
+        java.util.regex.Matcher m = RAM.matcher(dumpsys);
+        while (m.find()) {
+            long kb;
+            try {
+                kb = Long.parseLong(m.group(2).replace(",", ""));
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            switch (m.group(1)) {
+                case "Total": total = kb; break;
+                case "Free": free = kb; break;
+                case "Used": used = kb; break;
+                default: lost = kb; break;
+            }
+        }
+        java.util.regex.Matcher z = ZRAM.matcher(dumpsys);
+        if (z.find()) {
+            try {
+                zram = Long.parseLong(z.group(1).replace(",", ""));
+                swap = Long.parseLong(z.group(2).replace(",", ""));
+            } catch (NumberFormatException ignored) {
+                // no ZRAM line
+            }
+        }
+        StringBuilder b = new StringBuilder();
+        if (used >= 0) b.append("Used ").append(mb(used)).append(" MB");
+        if (free >= 0) b.append(b.length() > 0 ? " · " : "").append("Free ").append(mb(free)).append(" MB");
+        if (lost >= 0) b.append(b.length() > 0 ? " · " : "").append("Lost ").append(mb(lost)).append(" MB");
+        if (zram >= 0) {
+            b.append(b.length() > 0 ? " · " : "").append("ZRAM ").append(mb(zram)).append(" MB");
+            if (swap >= 0) b.append(" (swap ").append(mb(swap)).append(" MB)");
+        }
+        if (b.length() == 0 && total >= 0) {
+            b.append("Total ").append(mb(total)).append(" MB");
+        }
+        return b.toString();
+    }
+
+    private static long mb(long kb) {
+        return Math.round(kb / 1024.0);
+    }
+
+    /** The first @n process lines of @dumpsys's "Total PSS by process" (a test without adb). */
+    static String topLines(String dumpsys, int n) {
+        if (dumpsys == null) {
+            return "";
+        }
+        int at = dumpsys.indexOf("Total PSS by process:");
+        if (at < 0) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder();
+        int got = 0;
+        for (String l : dumpsys.substring(at).split("\n")) {
+            java.util.regex.Matcher m = TOP.matcher(l);
+            if (m.matches()) {
+                if (got >= n) {
+                    break;
+                }
+                long kb;
+                try {
+                    kb = Long.parseLong(m.group(1).replace(",", ""));
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                if (got++ > 0) {
+                    b.append('\n');
+                }
+                b.append(m.group(2).trim()).append(" — ").append(Math.round(kb / 1024.0)).append(" MB");
+            } else if (got > 0) {
+                break;      // the categories follow the processes
+            }
+        }
+        return b.toString();
+    }
+
     private static void round(Context c, String what, int adbTimeoutMs) {
         ActivityManager am = c.getSystemService(ActivityManager.class);
         long before = availableMb(am);

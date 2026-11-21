@@ -69,7 +69,7 @@ public class MainActivity extends Activity {
 
     private LinearLayout box;
     private final Panel p26 = new Panel(Guest.IOS26), p16 = new Panel(Guest.IOS16), pWatch = new Panel(Guest.WATCH);
-    private TextView hint, powerWarn, freeRamValue, wadbValue, updateValue, logsValue, footer, engineLog;
+    private TextView hint, powerWarn, freeRamValue, setupScreenValue, wadbValue, updateValue, logsValue, footer, engineLog;
     private LinearLayout updateBar, advanced;
     private TextView updateText, updateNote, updateGet, updateDismiss;
     /**
@@ -98,10 +98,17 @@ public class MainActivity extends Activity {
                 if (f.exists() && engineLog.getVisibility() == View.VISIBLE && advanced.getVisibility() == View.VISIBLE) {
                     String[] lines = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8).split("\n");
                     int from = Math.max(0, lines.length - 30);
-                    engineLog.setText(String.join("\n", java.util.Arrays.copyOfRange(lines, from, lines.length)));
+                    String text = String.join("\n", java.util.Arrays.copyOfRange(lines, from, lines.length));
+                    // only a change draws again: setText every second re-laid the page out and pulled the scroll
+                    // position (and the selection) back to the log while it was being read
+                    if (!text.equals(engineLog.getText().toString())) {
+                        engineLog.setText(text);
+                    }
                 }
             } catch (IOException e) {
-                engineLog.setText(e.toString());
+                if (!e.toString().equals(engineLog.getText().toString())) {
+                    engineLog.setText(e.toString());
+                }
             }
             engineLog.postDelayed(this, 1000);
         }
@@ -414,6 +421,7 @@ public class MainActivity extends Activity {
         heading(box, "Settings");
         LinearLayout settings = group(box, 0);
         freeRamValue = row(settings, "Free memory for iOS", v -> toggleFreeRam());
+        setupScreenValue = row(settings, "Keep screen on during setup", v -> toggleSetupScreen());
         wadbValue = row(settings, "Wireless debugging", v -> wirelessDebugging());
         ((View) wadbValue.getParent()).setVisibility(WirelessAdb.supported() ? View.VISIBLE : View.GONE);
         updateValue = row(settings, "Check for updates", v -> {
@@ -431,7 +439,8 @@ public class MainActivity extends Activity {
         advanced.setPadding(dp(4), dp(12), dp(4), 0);
         box.addView(advanced);
         text(advanced, "Runs iOS-style code on this phone's CPU the way iOS 16 does here, and reports its speed: "
-                + "useful when trying another phone.", 13, DIM).setPadding(dp(14), 0, dp(14), dp(12));
+                + "useful when trying another phone. Its log opens with a tap; there it can be copied and shared.",
+                13, DIM).setPadding(dp(14), 0, dp(14), dp(12));
         TextView run = capsule("Run the engine test", v -> {
             EngineService.start(this, 2, 2, 120);
             engineLog.setVisibility(View.VISIBLE);
@@ -442,7 +451,11 @@ public class MainActivity extends Activity {
         advanced.addView(run, rlp);
         engineLog = text(advanced, "", 11, 0xffcfcfcf);
         engineLog.setTypeface(Typeface.MONOSPACE);
-        engineLog.setTextIsSelectable(true);
+        // the preview is not the place to select from: it is rewritten as the test writes, which cleared a
+        // selection after a second. A tap opens the same log in Logs, where it can be copied and shared.
+        engineLog.setTextIsSelectable(false);
+        engineLog.setOnClickListener(v -> startActivity(new Intent(this, LogsActivity.class)
+                .putExtra(LogsActivity.EXTRA_ITEM, LogsActivity.RUN + "engine")));
         engineLog.setPadding(dp(12), dp(10), dp(12), dp(10));
         engineLog.setBackground(round(0xff111113, 12));
         engineLog.setLayoutParams(top(new LinearLayout.LayoutParams(-1, -2), dp(12)));
@@ -1417,6 +1430,7 @@ public class MainActivity extends Activity {
     private void showSettings() {
         boolean can = MemoryCleaner.supported(this);
         freeRamValue.setText(can ? MemoryCleaner.enabled(this) ? "On" : "Off" : "Pair first");
+        setupScreenValue.setText(SetupService.keepScreen(this) ? "On" : "Off");
         int records = CrashReport.files(this).size();
         logsValue.setText(records == 0 ? "" : records == 1 ? "1 record" : records + " records");
         String pairing = WadbPairService.state;
@@ -1446,6 +1460,31 @@ public class MainActivity extends Activity {
                         + "music or a call keeps running only if it shows a notification.")
                 .setPositiveButton("Turn on", (d, w) -> {
                     MemoryCleaner.setEnabled(this, true);
+                    showSettings();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /**
+     * The setup's screen wake lock: the display stays on while a setup runs, even with another screen showing,
+     * so Android does not move the app to its slow cores when the screen sleeps. Default on; off here.
+     */
+    private void toggleSetupScreen() {
+        if (SetupService.keepScreen(this)) {
+            SetupService.setKeepScreen(this, false);
+            showSettings();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Keep the screen on during a setup?")
+                .setMessage("While a setup runs, the app holds a screen wake lock: the display stays on even if another "
+                        + "screen is showing, so Android keeps the boot on its fast cores. It does not change the "
+                        + "brightness. The screen and the phone use more power and get warmer: turn the brightness down "
+                        + "and keep the phone on its charger. With this off, the setup screen still keeps the display on "
+                        + "while it is open.")
+                .setPositiveButton("Turn on", (d, w) -> {
+                    SetupService.setKeepScreen(this, true);
                     showSettings();
                 })
                 .setNegativeButton("Cancel", null)

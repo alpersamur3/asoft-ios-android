@@ -4,7 +4,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,8 +30,14 @@ final class SetupTick {
 
     private static final Pattern PID = Pattern.compile("pid:\\s?(\\d+)");
     private static final Pattern BASH = Pattern.compile("launching proc\\[[^\\]]*\\]: /bin/bash");
+    /** Every program launch AMFI prints (the executable's path), not only /bin/bash. */
+    private static final Pattern LAUNCH = Pattern.compile("launching proc\\[[^\\]]*\\]:\\s*([^,\\s]+)");
     private static final Pattern STAMP = Pattern.compile("waited \\d+s for stamp");
     private static final Pattern SAMPLER = Pattern.compile("el-sample t=(\\d+)s");
+    /** The engine's own stall lines in QEMU's stderr (native-el0.c): a stub that did not apply a TLB invalidation, a vCPU that waited on a stub, a stub that died. */
+    private static final Pattern TLB_TIMEOUT = Pattern.compile("native-el0: stub \\d+ did not apply a TLB invalidation in 5 s");
+    private static final Pattern STUB_WAIT = Pattern.compile("native-el0: vCPU \\d+ waits 10 s on stub");
+    private static final Pattern STUB_DEATH = Pattern.compile("native-el0: stub \\d+ died");
 
     /** How far a shell command got, as the console's text shows it (GuestConsole.run). */
     enum Poll {
@@ -76,7 +84,21 @@ final class SetupTick {
     static String hostText(long lateMs, int interactive, int idle, int powerSave, int whitelisted, int charging, int thermal) {
         return String.format(Locale.ROOT, "loop late max %d s, screen %s, idle %s, power-save %s, battery whitelist %s, charging %s, thermal %s",
                 (Math.max(0, lateMs) + 500) / 1000, interactive < 0 ? "?" : interactive == 0 ? "off" : "on", yn(idle), yn(powerSave),
-                yn(whitelisted), yn(charging), thermal < 0 ? "?" : String.valueOf(thermal));
+                yn(whitelisted), yn(charging), thermal < 0 ? "?" : thermal + " (" + thermalName(thermal) + ")");
+    }
+
+    /** PowerManager's THERMAL_STATUS_* in words: the number alone says little (2 = moderate is common on a cool phone). */
+    static String thermalName(int t) {
+        switch (t) {
+            case 0: return "none";
+            case 1: return "light";
+            case 2: return "moderate";
+            case 3: return "severe";
+            case 4: return "critical";
+            case 5: return "emergency";
+            case 6: return "shutdown";
+            default: return "?";
+        }
     }
 
     /** The loop's saved stall files to send: the files of the @stalls highest numbers among @names ("wallpaper-serial-stall-3.txt"). */
@@ -113,7 +135,10 @@ final class SetupTick {
 
     /** What one tick's new console text holds. */
     static final class Console {
-        int maxPid, bash, displayStarts, gpuRestarts;
+        int maxPid, bash, launches, displayStarts, gpuRestarts;
+        /** The executable AMFI launched most often since the last tick, and how many times; "" when none. */
+        String topLaunch = "";
+        int topLaunchCount;
         /** Offset in the text of the first pid more than JUMP above @prevMax, -1 when none. */
         int jumpAt = -1;
     }
@@ -136,6 +161,20 @@ final class SetupTick {
             }
         }
         c.bash = count(BASH, text);
+        // What iOS starts over and over names the crash loop (2026-11-17: a churning second boot's console
+        // named only bash because only /bin/bash was counted)
+        Map<String, Integer> byExe = new HashMap<>();
+        Matcher lm = LAUNCH.matcher(text);
+        while (lm.find()) {
+            c.launches++;
+            byExe.merge(lm.group(1), 1, Integer::sum);
+        }
+        for (Map.Entry<String, Integer> e : byExe.entrySet()) {
+            if (e.getValue() > c.topLaunchCount) {
+                c.topLaunch = e.getKey();
+                c.topLaunchCount = e.getValue();
+            }
+        }
         c.displayStarts = count(Pattern.compile("No Default FB Surface found"), text);
         c.gpuRestarts = count(Pattern.compile("Trying to restart GPU"), text);
         return c;
@@ -227,14 +266,45 @@ final class SetupTick {
         stderrAt = ea[0];
         int faulted = count(Pattern.compile("exec faulted"), err);
         int stamps = count(STAMP, err);
+        int tlbTimeouts = count(TLB_TIMEOUT, err);
+        int stubWaits = count(STUB_WAIT, err);
+        int stubDeaths = count(STUB_DEATH, err);
         samplerT = samplerT(err, samplerT);
         int newFrames = frames - framesAt;
         framesAt = frames;
-        return String.format(Locale.ROOT, "tick %d min (%s): console pid max %d, bash launches %d, display starts %d, \"restart GPU\" %d,"
-                        + " console +%d bytes, frames +%d, reims exec-faulted %d, stamp-waits %d, sampler t=%s s of %d s since QEMU started,"
-                        + " phone asleep %d s",
-                min, why, maxPid, c.bash, c.displayStarts, c.gpuRestarts, consoleBytes, newFrames, faulted, stamps,
+        String top = c.topLaunch.isEmpty() ? "" : " (top " + c.topLaunch + " x" + c.topLaunchCount + ")";
+        return String.format(Locale.ROOT, "tick %d min (%s): console pid max %d, launch procs %d%s, bash launches %d, display starts %d, \"restart GPU\" %d,"
+                        + " console +%d bytes, frames +%d, reims exec-faulted %d, engine tlb-timeouts %d, stub-waits %d, stub-deaths %d,"
+                        + " stamp-waits %d, sampler t=%s s of %d s since QEMU started, phone asleep %d s",
+                min, why, maxPid, c.launches, top, c.bash, c.displayStarts, c.gpuRestarts, consoleBytes, newFrames, faulted,
+                tlbTimeouts, stubWaits, stubDeaths, stamps,
                 samplerT < 0 ? "?" : String.valueOf(samplerT), wallS, suspendS);
+    }
+
+    /**
+     * The engine's stall lines in the newest {@link #SLICE} bytes of @stderr, for the log line a stall leaves:
+     * a stub that did not apply a TLB invalidation, a vCPU parked on a stub, a stub that died. These name a
+     * failure of the native EL0 engine when the guest's own console only shows the churn.
+     */
+    static String engineText(File stderr) {
+        // the whole tail of READ_CAP, not SLICE: one warning early in a five-hour stall would be out of 64 KB
+        String s = new String(tail(stderr, READ_CAP), StandardCharsets.ISO_8859_1);
+        return "engine tlb-timeouts " + count(TLB_TIMEOUT, s) + ", stub-waits " + count(STUB_WAIT, s)
+                + ", stub-deaths " + count(STUB_DEATH, s);
+    }
+
+    /** The newest @max bytes of @f; empty when it cannot be read. */
+    private static byte[] tail(File f, int max) {
+        try (RandomAccessFile r = new RandomAccessFile(f, "r")) {
+            long len = r.length();
+            long from = Math.max(0, len - max);
+            byte[] b = new byte[(int) (len - from)];
+            r.seek(from);
+            r.readFully(b);
+            return b;
+        } catch (IOException e) {
+            return new byte[0];
+        }
     }
 
     /** The shell has just not answered: the console up to now is kept, what follows it at the next tick. */
