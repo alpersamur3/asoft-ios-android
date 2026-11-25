@@ -12,10 +12,10 @@
     {
       "soc": "SM8850",
       "gpu": "Turnip Adreno (TM) 840",
-      "os": ["ios26"],
+      "os": ["ios26", "ios16"],
       "state": "works",
       "phone": "Xiaomi 25102PCBEG",
-      "note": "one report: ran 10 min at the 2x screen, up to 46 fps; iOS 16 and watchOS not reported yet"
+      "note": "one report each: iOS 26 ran 10 min at the 2x screen, up to 46 fps. iOS 16 on a OnePlus CPH2745 ran 15 min on Android 17 at 7 GB, up to 27 fps; the setup took 1 h 11 min (disk build 39 min, first start 24 min); free memory went down to 1319 MB. A second iOS 16 report, from a Xiaomi 25128PNA1C (Xiaomi 17 Ultra) at 4 GB: the setup took 1 h 6 min (disk build 22 min, first start 22 min); watchOS not reported yet"
     },
     {
       "soc": "SM8735",
@@ -163,11 +163,11 @@
     },
     {
       "soc": "SM8650",
-      "gpu": "",
-      "os": ["ios16"],
+      "gpu": "Turnip Adreno (TM) 750",
+      "os": ["ios26", "ios16"],
       "state": "works",
-      "phone": "Samsung SM-S928B",
-      "note": "one report: iOS 16 ran 10 min, up to 24 fps; the phone reached thermal status severe"
+      "phone": "OnePlus CPH2645",
+      "note": "one report each: iOS 26 ran 10 min on Android 17 at the 3x screen with 6 GB, up to 53 fps in its busiest second; the phone reached thermal status critical; free memory went down to 358 MB, so 4 GB is safer. iOS 16 on a Samsung SM-S928B ran 10 min, up to 24 fps; the phone reached thermal status severe. Some SM8650 phones restart during the iOS 26 setup (issue 92); watchOS not reported yet"
     },
     {
       "soc": "SM7435",
@@ -328,6 +328,14 @@
       "state": "works",
       "phone": "OPPO CPH2699",
       "note": "one report: iOS 16 ran 10 min on Android 16 at 4 GB, up to 8 fps, slow; the setup took 7 h 49 min (disk build 3 h 57 min, first start 3 h 32 min); free memory went down to 1543 MB"
+    },
+    {
+      "soc": "MT6897",
+      "gpu": "",
+      "os": ["ios16"],
+      "state": "works",
+      "phone": "Xiaomi 2311DRK48G",
+      "note": "one report: iOS 16 ran 20 min on Android 17 at 4 GB, up to 41 fps; the setup took 2 h 13 min (disk build 43 min, first start 49 min); free memory went down to 2212 MB"
     },
     {
       "soc": "SM6375",
