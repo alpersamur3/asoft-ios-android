@@ -379,6 +379,9 @@ public class SetupActivity extends Activity {
 
     private void finishRun(String result) {
         busy = false;
+        if (isDestroyed() || isFinishing()) {
+            return;
+        }
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         show();
         status.setText(result);
