@@ -312,10 +312,13 @@ public class LogsActivity extends Activity {
         t.setTypeface(MEDIUM);
         TextView m = text(box, s.meta, 13.5f, DIM);
         m.setPadding(0, dp(6), 0, 0);
+        android.widget.HorizontalScrollView actionScroll = new android.widget.HorizontalScrollView(this);
+        actionScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(-dp(14), dp(8), 0, dp(4));
-        box.addView(actions);
+        actionScroll.addView(actions);
+        box.addView(actionScroll, new LinearLayout.LayoutParams(-1, -2));
         link(actions, "Share", LINK, v -> {
             if (s.record != null) {
                 CrashReport.share(this, s.record);
