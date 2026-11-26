@@ -109,7 +109,7 @@ final class AdbMdns {
 
             @Override
             public void onServiceResolved(NsdServiceInfo i) {
-                if (running && own(i.getHost()) && i.getPort() > 0) {
+                if (running && isOwnService(i) && i.getPort() > 0) {
                     found = i.getServiceName();
                     listener.port(i.getPort());
                 }
@@ -117,23 +117,54 @@ final class AdbMdns {
         });
     }
 
-    private static boolean own(InetAddress a) {
+    private static boolean isOwnService(NsdServiceInfo info) {
+        if (info == null) {
+            return false;
+        }
+        java.util.List<InetAddress> locals = localAddresses();
+        @SuppressWarnings("deprecation")
+        InetAddress host = info.getHost();
+        if (ownAddress(host, locals)) {
+            return true;
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            for (InetAddress a : info.getHostAddresses()) {
+                if (ownAddress(a, locals)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static java.util.List<InetAddress> localAddresses() {
+        java.util.List<InetAddress> list = new java.util.ArrayList<>();
+        try {
+            for (NetworkInterface n : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                list.addAll(Collections.list(n.getInetAddresses()));
+            }
+        } catch (SocketException | NullPointerException ignored) {
+            // no interfaces to ask
+        }
+        return list;
+    }
+
+    /** True if @a is loopback or matches any raw IP bytes in @locals (ignoring IPv6 scope_id differences). */
+    static boolean ownAddress(InetAddress a, Iterable<InetAddress> locals) {
         if (a == null) {
             return false;
         }
         if (a.isLoopbackAddress()) {
             return true;
         }
-        try {
-            for (NetworkInterface n : Collections.list(NetworkInterface.getNetworkInterfaces())) {
-                for (InetAddress mine : Collections.list(n.getInetAddresses())) {
-                    if (mine.equals(a)) {
-                        return true;
-                    }
-                }
+        byte[] target = a.getAddress();
+        if (target == null) {
+            return false;
+        }
+        for (InetAddress mine : locals) {
+            if (mine != null && (mine.equals(a) || java.util.Arrays.equals(mine.getAddress(), target))) {
+                return true;
             }
-        } catch (SocketException | NullPointerException ignored) {
-            // no interfaces to ask: not ours
         }
         return false;
     }
