@@ -573,7 +573,7 @@ static uint64_t fb_sample(void)
 JNIEXPORT jboolean JNICALL
 Java_com_asoft_ios_Render_frame(JNIEnv *env, jclass cls, jint width, jint height)
 {
-    if (ctx == EGL_NO_CONTEXT || !fb) {
+    if (ctx == EGL_NO_CONTEXT || !fb || width <= 0 || height <= 0 || fb_w <= 0 || fb_h <= 0) {
         return JNI_FALSE;
     }
     uint64_t sum = fb_sample();

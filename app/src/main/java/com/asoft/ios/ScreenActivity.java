@@ -825,15 +825,10 @@ public class ScreenActivity extends Activity implements SurfaceHolder.Callback, 
         }
         thumbAt = up;
         // the guest's picture inside the surface (guestPoint's rectangle)
-        float vw = view.getWidth(), vh = view.getHeight(), g = (float) Guest.fbW() / Guest.fbH();
-        float w = vw, h = vh;
-        if (vw / vh > g) {
-            w = vh * g;
-        } else {
-            h = vw / g;
-        }
-        android.graphics.Rect from = new android.graphics.Rect(Math.round((vw - w) / 2), Math.round((vh - h) / 2),
-                Math.round((vw + w) / 2), Math.round((vh + h) / 2));
+        ScreenGeometry.FitBox box = ScreenGeometry.fit(view.getWidth(), view.getHeight(), Guest.fbW(), Guest.fbH());
+        float g = Math.max(0.1f, box.width / box.height);
+        android.graphics.Rect from = new android.graphics.Rect(Math.round(box.left), Math.round(box.top),
+                Math.round(box.left + box.width), Math.round(box.top + box.height));
         int tw = 300, th = Math.max(1, Math.round(300 / g));
         android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(tw, th, android.graphics.Bitmap.Config.ARGB_8888);
         java.io.File to = Guest.thumbFile(this, builtFor);    // (this screen's picture is of the guest it was built for)
@@ -1133,7 +1128,7 @@ public class ScreenActivity extends Activity implements SurfaceHolder.Callback, 
             restart.setVisibility(View.GONE);
             report.setVisibility(View.GONE);
         }
-        if (fbPid == pid && attached) {
+        if (fbPid == pid && attached && surfW > 0 && surfH > 0) {
             int w = surfW, h = surfH;
             final int p = pid;
             render.post(() -> RunStats.frame(p, Render.frame(w, h)));
@@ -1204,15 +1199,7 @@ public class ScreenActivity extends Activity implements SurfaceHolder.Callback, 
 
     /** Where the guest screen is inside the view (aspect kept, centred). */
     private float[] guestPoint(float x, float y) {
-        float vw = view.getWidth(), vh = view.getHeight();
-        float g = (float) Guest.fbW() / Guest.fbH();
-        float w = vw, h = vh;
-        if (vw / vh > g) {
-            w = vh * g;
-        } else {
-            h = vw / g;
-        }
-        return new float[] { (x - (vw - w) / 2) / w, (y - (vh - h) / 2) / h };
+        return ScreenGeometry.touchNorm(x, y, view.getWidth(), view.getHeight(), Guest.fbW(), Guest.fbH());
     }
 
     /**

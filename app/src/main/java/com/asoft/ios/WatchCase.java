@@ -68,17 +68,12 @@ final class WatchCase extends ViewGroup {
     protected void onMeasure(int ws, int hs) {
         int w = MeasureSpec.getSize(ws), h = MeasureSpec.getSize(hs);
         float crownRoom = dp(54), left = dp(18), bezel = dp(11), band = dp(72);
-        float caseW = w - left - crownRoom;
-        float screenW = caseW - 2 * bezel;
-        float screenH = screenW * WatchProfile.FB_H / WatchProfile.FB_W;
-        float caseH = screenH + 2 * bezel;
-        float maxCaseH = h - 2 * band;
-        if (caseH > maxCaseH) {         // a short screen: the case shrinks, the band stays
-            caseH = maxCaseH;
-            screenH = caseH - 2 * bezel;
-            screenW = screenH * WatchProfile.FB_W / WatchProfile.FB_H;
-            caseW = screenW + 2 * bezel;
-        }
+        ScreenGeometry.WatchLayout box = ScreenGeometry.watchBox(w, h, crownRoom, left, bezel, band,
+                WatchProfile.FB_W, WatchProfile.FB_H);
+        float caseW = box.caseW;
+        float caseH = box.caseH;
+        float screenW = box.screenW;
+        float screenH = box.screenH;
         float caseLeft = left + (w - left - crownRoom - caseW) / 2;
         float caseTop = (h - caseH) / 2;
         caseRect.set(caseLeft, caseTop, caseLeft + caseW, caseTop + caseH);
@@ -90,8 +85,8 @@ final class WatchCase extends ViewGroup {
         // a 41 mm watch: the crown ~16% of the case's height and out ~2.5 mm, the side button ~27% long
         crownRect.set(caseRect.right - dp(9), crownY - dp(33), caseRect.right + dp(21), crownY + dp(33));
         sideRect.set(caseRect.right - dp(4), sideY - dp(50), caseRect.right + dp(10), sideY + dp(50));
-        int cw = MeasureSpec.makeMeasureSpec(Math.round(screenRect.width()), MeasureSpec.EXACTLY);
-        int ch = MeasureSpec.makeMeasureSpec(Math.round(screenRect.height()), MeasureSpec.EXACTLY);
+        int cw = MeasureSpec.makeMeasureSpec(Math.max(1, Math.round(screenRect.width())), MeasureSpec.EXACTLY);
+        int ch = MeasureSpec.makeMeasureSpec(Math.max(1, Math.round(screenRect.height())), MeasureSpec.EXACTLY);
         for (int i = 0; i < getChildCount(); i++) {
             getChildAt(i).measure(cw, ch);
         }
