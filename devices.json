@@ -95,7 +95,7 @@
       "os": ["ios26", "ios16"],
       "state": "works",
       "phone": "Nothing A059",
-      "note": "one report each: iOS 26 ran 30 min on Android 17 at the 2x screen with 4 GB, up to 14 fps in its busiest second, slow; its setup took 2 h 22 min (DataMigration and the wallpaper 2 h 5 min); free memory went down to 937 MB. iOS 16 ran 40 min, up to 16 fps; the setup took 1 h 53 min (disk build 54 min, first start 54 min); watchOS not reported yet"
+      "note": "one report each: iOS 26 ran 30 min on Android 17 at the 2x screen with 4 GB, up to 14 fps in its busiest second, slow; its setup took 2 h 22 min (DataMigration and the wallpaper 2 h 5 min); free memory went down to 937 MB. A second iOS 26 report, from a Nothing A059P at 6 GB: up to 35 fps, slow, touches not always taken; its setup took 7 h 28 min; free memory went down to 1160 MB. iOS 16 ran 40 min, up to 16 fps; the setup took 1 h 53 min (disk build 54 min, first start 54 min); watchOS not reported yet"
     },
     {
       "soc": "SM8150",
@@ -336,6 +336,14 @@
       "state": "works",
       "phone": "OPPO CPH2699",
       "note": "one report: iOS 16 ran 10 min on Android 16 at 4 GB, up to 8 fps, slow; the setup took 7 h 49 min (disk build 3 h 57 min, first start 3 h 32 min); free memory went down to 1543 MB"
+    },
+    {
+      "soc": "MT6877",
+      "gpu": "",
+      "os": ["ios16"],
+      "state": "works",
+      "phone": "Xiaomi 22101316G",
+      "note": "one report: iOS 16 ran 10 min on Android 16 at 2 GB, up to 16 fps; the setup took 2 h 50 min (disk build 1 h 32 min, first start 1 h 3 min); free memory went down to 1281 MB"
     },
     {
       "soc": "MT6897",
