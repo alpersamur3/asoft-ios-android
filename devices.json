@@ -338,6 +338,14 @@
       "note": "one report: iOS 16 ran 10 min on Android 16 at 4 GB, up to 8 fps, slow; the setup took 7 h 49 min (disk build 3 h 57 min, first start 3 h 32 min); free memory went down to 1543 MB"
     },
     {
+      "soc": "SM7475",
+      "gpu": "",
+      "os": ["ios16"],
+      "state": "works",
+      "phone": "Xiaomi 23049PCD8G",
+      "note": "one report: iOS 16 ran 30 min on Android 15 at 4 GB, up to 40 fps; the setup took 2 h 23 min (disk build 1 h 4 min, first start 1 h 9 min); free memory went down to 1470 MB. Some SM7475 phones restart during the iOS 26 setup (issue 92)"
+    },
+    {
       "soc": "MT6877",
       "gpu": "",
       "os": ["ios16"],
