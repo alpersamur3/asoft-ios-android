@@ -123,13 +123,20 @@ final class AppExit {
         p.setProperty("pid", String.valueOf(android.os.Process.myPid()));
         p.setProperty("version", String.valueOf(versionCode(c)));
         p.setProperty("saved", String.valueOf(System.currentTimeMillis()));
+        writeAtomic(f, p);
+    }
+
+    static boolean writeAtomic(File f, Properties p) {
         File tmp = new File(f.getPath() + ".tmp");
         try (FileOutputStream o = new FileOutputStream(tmp)) {
             p.store(o, "what the app was doing (AppExit)");
+            o.flush();
+            o.getFD().sync();
         } catch (IOException e) {
-            return;
+            tmp.delete();
+            return false;
         }
-        tmp.renameTo(f);
+        return tmp.renameTo(f);
     }
 
     private static Properties load(File f) {
