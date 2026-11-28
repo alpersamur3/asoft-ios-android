@@ -15,15 +15,15 @@
       "os": ["ios26", "ios16"],
       "state": "works",
       "phone": "Xiaomi 25102PCBEG",
-      "note": "one report each: iOS 26 ran 10 min at the 2x screen, up to 46 fps. iOS 16 on a OnePlus CPH2745 ran 15 min on Android 17 at 7 GB, up to 27 fps; the setup took 1 h 11 min (disk build 39 min, first start 24 min); free memory went down to 1319 MB. A second iOS 16 report, from a Xiaomi 25128PNA1C (Xiaomi 17 Ultra) at 4 GB: the setup took 1 h 6 min (disk build 22 min, first start 22 min); watchOS not reported yet"
+      "note": "one report each: iOS 26 ran 10 min at the 2x screen, up to 46 fps. A second iOS 26 report, from a Samsung SM-S948B at 3 GB: up to 60 fps in its busiest second, 10 to 15 fps in use; the phone reached thermal status critical. iOS 16 on a OnePlus CPH2745 ran 15 min on Android 17 at 7 GB, up to 27 fps; the setup took 1 h 11 min (disk build 39 min, first start 24 min); free memory went down to 1319 MB. A second iOS 16 report, from a Xiaomi 25128PNA1C (Xiaomi 17 Ultra) at 4 GB: the setup took 1 h 6 min (disk build 22 min, first start 22 min); watchOS not reported yet"
     },
     {
       "soc": "SM8735",
       "gpu": "Turnip Adreno (TM) 825",
-      "os": ["ios26"],
+      "os": ["ios26", "ios16"],
       "state": "works",
       "phone": "Xiaomi 25053PC47I",
-      "note": "one report: ran 25 min at the 2x screen, up to 53 fps in its busiest second (the reporter saw 3 to 5 fps most of the time); the setup took 4 h 18 min; iOS 16 and watchOS not reported yet"
+      "note": "one report: iOS 26 ran 25 min at the 2x screen, up to 53 fps in its busiest second (the reporter saw 3 to 5 fps most of the time); the setup took 4 h 18 min. iOS 16 on a vivo I2405 ran 10 min on Android 16 at 4 GB, up to 20 fps; the setup took 3 h 49 min (disk build 2 h 3 min, first start 1 h 40 min); the phone reached thermal status severe. A second iOS 16 report, from a Nothing A024 at 7 GB: up to 3 fps; the setup took 1 h 40 min (disk build 55 min, first start 33 min); watchOS not reported yet"
     },
     {
       "soc": "SM8635",
@@ -232,6 +232,14 @@
       "state": "works",
       "phone": "Samsung SM-A127F",
       "note": "one report: iOS 16 ran 40 min, up to 26 fps; free memory went down to 160 MB"
+    },
+    {
+      "soc": "Tensor",
+      "gpu": "",
+      "os": ["ios16"],
+      "state": "works",
+      "phone": "Google Pixel 6",
+      "note": "one report, on the test build 0.1.6-kgsl1: iOS 16 ran 25 min on Android 17 at 2 GB, up to 1 fps, very slow; a save took 19 min to load; free memory went down to 1137 MB"
     },
     {
       "soc": "Tensor G4",
